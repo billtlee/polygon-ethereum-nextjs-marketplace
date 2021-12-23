@@ -15,7 +15,7 @@ contract NFTMarket is ReentrancyGuard {
 
   address payable owner;
   uint256 listingPrice = 0.025 ether;
-
+  mapping(uint=>mapping(uint=>address payable)) itemOwnerHistoryList;
   
   constructor() {
     owner = payable(msg.sender);
@@ -30,9 +30,6 @@ contract NFTMarket is ReentrancyGuard {
     address payable owner;
     uint256 price;
     bool sold;
-    address payable firstOwner;
-    address payable secondOwner;
-    address payable thirdOwner;
     uint256 saleCount;
   }
 
@@ -46,11 +43,7 @@ contract NFTMarket is ReentrancyGuard {
     address owner,
     uint256 price,
     bool sold,
-    address firstOwner,
-    address secondOwner,
-    address thirdOwner,
     uint256 saleCount
-    
   );
   
 
@@ -72,6 +65,7 @@ contract NFTMarket is ReentrancyGuard {
     _itemIds.increment();
     uint256 itemId = _itemIds.current();
 
+    itemOwnerHistoryList[itemId][0] = payable(msg.sender) ;
 
     idToMarketItem[itemId] =  MarketItem(
       itemId,
@@ -81,12 +75,8 @@ contract NFTMarket is ReentrancyGuard {
       payable(address(0)),
       price,
       false,
-      payable(msg.sender),
-      payable(address(0)),
-      payable(address(0)),
       0
     ); 
-
 
      emit MarketItemCreated(
       itemId,
@@ -96,9 +86,6 @@ contract NFTMarket is ReentrancyGuard {
       address(0),
       price,
       false,
-      msg.sender,
-      address(0),
-      address(0),
       0
     );
 
@@ -117,8 +104,18 @@ contract NFTMarket is ReentrancyGuard {
     uint tokenId = idToMarketItem[itemId].tokenId;
 
     require(msg.value == price, "Please submit the asking price in order to complete the purchase");
-
-    if(idToMarketItem[itemId].saleCount==1)
+    
+    uint currentSale = idToMarketItem[itemId].saleCount;
+    uint remainingFunds = msg.value;
+    while (currentSale>=0){
+        if(currentSale==0){
+            itemOwnerHistoryList[itemId][currentSale].transfer((remainingFunds));    
+        }
+        itemOwnerHistoryList[itemId][currentSale].transfer((remainingFunds*4/5));
+        remainingFunds -= (remainingFunds*4/5);
+        currentSale -= 1;
+    }   
+    /*if(idToMarketItem[itemId].saleCount==1)
     {
     idToMarketItem[itemId].seller.transfer(msg.value);
     }
@@ -136,7 +133,7 @@ contract NFTMarket is ReentrancyGuard {
       console.log("The share of 3rd owner", msg.value*4/5);
       console.log("The share of 2nd owner", msg.value*4/5*1/5);
       console.log("The share of 1st owner", msg.value*1/5*1/5);
-    }
+    }*/
 
 
     IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);  //Ownership transfer
@@ -144,6 +141,8 @@ contract NFTMarket is ReentrancyGuard {
     idToMarketItem[itemId].sold = true;
     _itemsSold.increment();
     payable(owner).transfer(listingPrice);
+    idToMarketItem[itemId].saleCount+=1;
+    itemOwnerHistoryList[itemId][idToMarketItem[itemId].saleCount]=payable(msg.sender);
   }
   
   function resellItem(
