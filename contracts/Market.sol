@@ -34,9 +34,11 @@ contract NFTMarket is ReentrancyGuard {
     address payable secondOwner;
     address payable thirdOwner;
     uint256 saleCount;
+   
   }
-
+  
   mapping(uint256 => MarketItem) private idToMarketItem;
+  mapping (uint256 => mapping(uint256=>address payable)) owners;
 
   event MarketItemCreated (
     uint indexed itemId,
@@ -49,8 +51,7 @@ contract NFTMarket is ReentrancyGuard {
     address firstOwner,
     address secondOwner,
     address thirdOwner,
-    uint256 saleCount
-    
+    uint saleCount
   );
   
 
@@ -87,8 +88,9 @@ contract NFTMarket is ReentrancyGuard {
       0
     ); 
 
+    owners[itemId][0] = payable(msg.sender);
 
-     emit MarketItemCreated(
+    emit MarketItemCreated(
       itemId,
       nftContract,
       tokenId,
@@ -124,22 +126,27 @@ contract NFTMarket is ReentrancyGuard {
     }
     if(idToMarketItem[itemId].saleCount==2)
     {
-    idToMarketItem[itemId].seller.transfer((msg.value*4/5));
-    idToMarketItem[itemId].firstOwner.transfer(msg.value*1/5);
-     console.log("The share of 2nd owner", msg.value*4/5);
-     console.log("The share of 1st owner", msg.value*1/5);
+    owners[itemId][0].transfer((msg.value*1/2*1/10));//First owner commission= msg.value*a*r
+    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*1/10*1/2);//last seller royalty= msg.value*r*c
+    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*9/10);//last seller sale = 90% of sale price
     }
-    if(idToMarketItem[itemId].saleCount==3){
-      idToMarketItem[itemId].seller.transfer((msg.value*4/5));
-      idToMarketItem[itemId].firstOwner.transfer((msg.value*1/5*4/5));
-      idToMarketItem[itemId].secondOwner.transfer((msg.value*1/5*1/5));
-      console.log("The share of 3rd owner", msg.value*4/5);
-      console.log("The share of 2nd owner", msg.value*4/5*1/5);
-      console.log("The share of 1st owner", msg.value*1/5*1/5);
+    if(idToMarketItem[itemId].saleCount>2){
+      //r =0.10, a=0.50, b=0.30, c=0.20
+      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*1/10*2/10);//last seller royalty= msg.value*r*c
+      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*9/10); // last seller sale = 90% of sale price
+      owners[itemId][0].transfer((msg.value*1/2*1/10));//First owner commission= msg.value*a*r
+      for (uint i=1;i< idToMarketItem[itemId].saleCount-1; i++){ //for all indermediaries, commission =  (msg.value*r*b/i)
+        owners[itemId][i].transfer((msg.value*1/10*3/10)/(idToMarketItem[itemId].saleCount-2));
+      
+      }
+      console.log("The first dude gets",msg.value*1/2*1/10);
+      console.log("The last dude gets", (msg.value*1/10*2/10)+(msg.value*9/10));
+      console.log("The middle men share is",(msg.value*1/10*3/10)/(idToMarketItem[itemId].saleCount-2));
     }
 
-
+   
     IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);  //Ownership transfer
+    owners[itemId][idToMarketItem[itemId].saleCount]=payable(msg.sender); // the new owner is msg.sender
     idToMarketItem[itemId].owner = payable(msg.sender);
     idToMarketItem[itemId].sold = true;
     _itemsSold.increment();
@@ -163,9 +170,12 @@ contract NFTMarket is ReentrancyGuard {
     idToMarketItem[itemId].sold = false;
     idToMarketItem[itemId].price = price;
     _itemsSold.decrement();
+
+   
     console.log("In contract");
     console.log("Sender", msg.sender);
-    console.log("Token id",tokenId);
+    console.log("Token id", tokenId);
+   
     IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
   }
 
