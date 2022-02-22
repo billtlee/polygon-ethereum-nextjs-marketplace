@@ -12,6 +12,10 @@ contract NFTMarket is ReentrancyGuard {
   using Counters for Counters.Counter;
   Counters.Counter private _itemIds;
   Counters.Counter private _itemsSold;
+  uint8 royalties = 10; // percent of sale going to royalties
+  uint8 royalty_a = 50; // percent of royalty going to first owner
+  uint8 royalty_b = 20; // percent of royalty going to the seller
+  // //implicit royalty_c = 30; // percent of royalty going to the the intermediaries
 
   address payable owner;
   uint256 listingPrice = 0.025 ether;
@@ -126,22 +130,23 @@ contract NFTMarket is ReentrancyGuard {
     }
     if(idToMarketItem[itemId].saleCount==2)
     {
-    owners[itemId][0].transfer((msg.value*1/2*1/10));//First owner commission= msg.value*a*r
-    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*1/10*1/2);//last seller royalty= msg.value*r*c
-    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*9/10);//last seller sale = 90% of sale price
+    owners[itemId][0].transfer((msg.value*royalties/100*royalty_a/100));//First owner commission= msg.value*a*r
+    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*royalties/100*(100-royalty_a)/100);//last seller royalty= msg.value*r*c
+    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*(100-royalties)/100);//last seller sale = 90% of sale price
     }
     if(idToMarketItem[itemId].saleCount>2){
       //r =0.10, a=0.50, b=0.30, c=0.20
-      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*1/10*2/10);//last seller royalty= msg.value*r*c
-      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*9/10); // last seller sale = 90% of sale price
-      owners[itemId][0].transfer((msg.value*1/2*1/10));//First owner commission= msg.value*a*r
+      owners[itemId][0].transfer((msg.value*royalties/100*royalty_a/100));//First owner commission= msg.value*a*r
       for (uint i=1;i< idToMarketItem[itemId].saleCount-1; i++){ //for all indermediaries, commission =  (msg.value*r*b/i)
-        owners[itemId][i].transfer((msg.value*1/10*3/10)/(idToMarketItem[itemId].saleCount-2));
-      
+        owners[itemId][i].transfer((msg.value*royalties/100*royalty_b/100)/(idToMarketItem[itemId].saleCount-2));
       }
-      console.log("The first dude gets",msg.value*1/2*1/10);
-      console.log("The last dude gets", (msg.value*1/10*2/10)+(msg.value*9/10));
-      console.log("The middle men share is",(msg.value*1/10*3/10)/(idToMarketItem[itemId].saleCount-2));
+      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*royalties/100*(100-royalty_a-royalty_b)/100);//last seller royalty= msg.value*r*c (c=100-a-b)
+      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*(100-royalties)/100); // last seller sale = 90% of sale price
+      
+      console.log("The first dude gets",msg.value*royalties/100*royalty_a/100);
+      console.log("The last dude gets", (msg.value*royalties/100*(100-royalty_a-royalty_b)/100+msg.value*(100-royalties)/100));
+      console.log("The middle men share is",(msg.value*royalties/100*royalty_b/100)/(idToMarketItem[itemId].saleCount-2));
+      console.log("THE total amount the middle men get is",msg.value*royalties/100*royalty_b/100);
     }
 
    
@@ -245,5 +250,8 @@ contract NFTMarket is ReentrancyGuard {
     }
     return items;
   }
+  // function setRoyalties(uint8 _royalties, uint8 _royalty_a, uint8 _royalty_b) external {
+
+  // }
 
 }
