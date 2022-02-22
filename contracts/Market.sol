@@ -20,8 +20,12 @@ contract NFTMarket is ReentrancyGuard {
   address payable owner;
   uint256 listingPrice = 0.025 ether;
 
-  function setRoyalties(uint8 _royalties, uint8 _royalty_a, uint8 _royalty_b) external {
+  modifier onlyOwner(){
     require(msg.sender==owner);
+    _;
+  }
+  
+  function setRoyalties(uint8 _royalties, uint8 _royalty_a, uint8 _royalty_b) external onlyOwner{
     if(_royalties<=100){
       royalties=_royalties;
     }
