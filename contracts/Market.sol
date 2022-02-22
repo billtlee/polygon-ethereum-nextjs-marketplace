@@ -20,7 +20,29 @@ contract NFTMarket is ReentrancyGuard {
   address payable owner;
   uint256 listingPrice = 0.025 ether;
 
-  
+  function setRoyalties(uint8 _royalties, uint8 _royalty_a, uint8 _royalty_b) external {
+    require(msg.sender==owner);
+    if(_royalties<=100){
+      royalties=_royalties;
+    }
+    if(_royalty_a<=100 && _royalty_b<=100){
+      require((_royalty_a+_royalty_b)<=100);
+      royalty_a=_royalty_a;
+      royalty_b=_royalty_b;
+    }
+    else if (_royalty_a<=100){
+      require((_royalty_a+royalty_b)<=100);
+      royalty_a=_royalty_a;
+    }
+    else if (_royalty_b<=100){
+      require((royalty_a+_royalty_b)<=100);
+      royalty_b=_royalty_b;
+    }
+  }
+  // this function can be called to change royalties and/or royalty_a and/or royalty_b
+  // royalty_c is still implicit since it always has to be equal to 100 - royalty_a - royalty_b and this method also avoids having to check if a + b + c = 100
+  // if you want to change only royalties to 20 percent call function with setRoyalties(20,101,101) and it will change only that
+
   constructor() {
     owner = payable(msg.sender);
   }
@@ -250,8 +272,6 @@ contract NFTMarket is ReentrancyGuard {
     }
     return items;
   }
-  // function setRoyalties(uint8 _royalties, uint8 _royalty_a, uint8 _royalty_b) external {
-
-  // }
+  
 
 }
