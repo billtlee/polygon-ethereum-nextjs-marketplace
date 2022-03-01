@@ -12,11 +12,9 @@ contract NFTMarket is ReentrancyGuard {
   using Counters for Counters.Counter;
   Counters.Counter private _itemIds;
   Counters.Counter private _itemsSold;
-  uint8 royalties = 10; // percent of sale going to royalties
-  uint8 royalty_a = 50; // percent of royalty going to first owner
-  uint8 royalty_b = 20; // percent of royalty going to the seller
-  // //implicit royalty_c = 30; // percent of royalty going to the the intermediaries
-̀
+  uint256 royalties = 10; // percent of sale going to royalties
+  uint256 royalty_a = 50; // percent of royalty going to first owner
+  uint256 royalty_b = 20; // percent of royalty going to the seller/*implicit royalty_c = 30;percent of royalty going to the the intermediaries*/
   address payable owner;
   uint256 listingPrice = 0.025 ether;
 
@@ -63,30 +61,29 @@ contract NFTMarket is ReentrancyGuard {
     address payable firstOwner;
     address payable secondOwner;
     address payable thirdOwner;
-    uint256 saleCount;
-   
+    uint256 saleCount; 
   }
 
-  // struct Auction {
-  //   //uint itemId;
-  //   uint  endAt;
-  //   bool started;
-  //   bool ended;
+  struct Auction {
+  //  uint itemId;
+    uint  endAt;
+    bool started;
+    bool ended;
 
-  //   address highestBidder;
-  //   uint highestBid;
-  //   uint bidCount;
-  // }
+    address payable highestBidder;
+    uint highestBid;
+    uint bidCount;
+  }
 
-  // struct BidStruct {
-  //     address payable bidder;
-  //     uint256 bid;
-  // }
+  struct BidStruct {
+      address payable bidder;
+      uint256 bid;
+  }
   //item 5 bid number 4
   //bids[5][4] -> Bidstruct(address, bid amount)
 
-  // mapping (uint256 => Auction) private idToAuctionItem;
-  // mapping (uint256 => mapping(uint=>BidStruct)) public bids; 
+  mapping (uint256 => Auction) private idToAuctionItem;
+  mapping (uint256 => mapping(uint=>BidStruct)) public bids; 
   mapping(uint256 => MarketItem) private idToMarketItem;
   mapping (uint256 => mapping(uint256=>address payable)) owners;
 
@@ -119,7 +116,10 @@ contract NFTMarket is ReentrancyGuard {
     address thirdOwner,
     uint saleCount
   );
-  
+
+  event Bid(uint itemId, address indexed sender, uint amount);
+  event End(uint itemId, address indexed highestBidder, uint highestBid);
+  event Withdraw(uint itemId, address indexed bidder, uint bal);
 
   /* Returns the listing price of the contract */
   function getListingPrice() public view returns (uint256) {
@@ -135,7 +135,9 @@ contract NFTMarket is ReentrancyGuard {
   function createMarketItem(
     address nftContract,
     uint256 tokenId,
-    uint256 price
+    uint256 price,
+    bool isAuctionItem
+
   ) public payable nonReentrant {
     require(price > 0, "Price must be at least 1 wei");
     require(msg.value == listingPrice, "Price must be equal to listing price");
@@ -144,7 +146,7 @@ contract NFTMarket is ReentrancyGuard {
     _itemIds.increment();
     uint256 itemId = _itemIds.current();
 
-
+  
     idToMarketItem[itemId] =  MarketItem(
       itemId,
       nftContract,
@@ -152,7 +154,7 @@ contract NFTMarket is ReentrancyGuard {
       payable(msg.sender),
       payable(address(0)),
       price,
-      false,
+      isAuctionItem,
       payable(msg.sender),
       payable(address(0)),
       payable(address(0)),
@@ -168,15 +170,76 @@ contract NFTMarket is ReentrancyGuard {
       msg.sender,
       address(0),
       price,
-      false,
+      isAuctionItem,
       msg.sender,
       address(0),
       address(0),
       0
     );
-
+    
     IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+
+    if(isAuctionItem){
+      idToAuctionItem[itemId] = Auction( 
+        block.timestamp+300,
+        true,
+        false,
+        payable(address(0)),
+        price,
+        0
+      );
+    }
   }
+
+  function CreateBid(uint256 itemId) public payable nonReentrant{
+    require(idToAuctionItem[itemId].started, "not started");
+    require(block.timestamp < idToAuctionItem[itemId].endAt, "ended");
+    require(msg.value>idToAuctionItem[itemId].highestBid, "cheap bid");
+    
+    idToAuctionItem[itemId].bidCount+=1;
+    if (idToAuctionItem[itemId].highestBidder != address(0)) {
+      //bids[idToAuctionItem[itemId].highestBidder] += idToAuctionItem[itemId].highestBid;
+      bids[itemId][idToAuctionItem[itemId].bidCount] = BidStruct(idToAuctionItem[itemId].highestBidder,idToAuctionItem[itemId].highestBid );//mapping (uint256 => mapping(uint=>BidStruct)) public bids; 
+
+    }
+    idToAuctionItem[itemId].highestBidder = payable(msg.sender);
+    idToAuctionItem[itemId].highestBid = msg.value;
+    
+    emit Bid(itemId,msg.sender,msg.value);
+  }
+
+  function endAuction(uint256 itemId) external {
+        require(idToAuctionItem[itemId].started, "not started");
+        require(block.timestamp >= idToAuctionItem[itemId].endAt, "not ended");
+        require(!idToAuctionItem[itemId].ended, "ended");
+
+        idToAuctionItem[itemId].ended = true;
+        if (idToAuctionItem[itemId].highestBidder != address(0)) {
+            IERC721(idToMarketItem[itemId].nftContract).transferFrom(address(this), idToAuctionItem[itemId].highestBidder, idToMarketItem[itemId].tokenId);//nft.safeTransferFrom(address(this), highestBidder, nftId);
+            idToMarketItem[itemId].seller.transfer(idToAuctionItem[itemId].highestBid);
+        } else {
+            createMarketSale(idToMarketItem[itemId].nftContract, itemId);
+        }
+        //withdraw function
+        uint i = 1;
+        for(i=1;i<=idToAuctionItem[itemId].bidCount;i+=1){
+        //mapping (uint256 => Auction) private idToAuctionItem;
+        //mapping (uint256 => mapping(uint=>BidStruct)) public bids; 
+  //       struct BidStruct {
+  //        address payable bidder;
+  //        uint256 bid;
+  //       }
+          uint bal = bids[itemId][i].bid;
+          bids[itemId][i].bid = 0;
+          payable(bids[itemId][i].bidder).transfer(bal);
+
+          emit Withdraw(itemId, bids[itemId][i].bidder, bal);
+        }
+
+        idToAuctionItem[itemId].bidCount = 0;
+
+        emit End(itemId, idToAuctionItem[itemId].highestBidder, idToAuctionItem[itemId].highestBid);
+    }
 
   /* Creates the sale of a marketplace item */
   /* Transfers ownership of the item, as well as funds between parties */
