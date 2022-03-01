@@ -16,7 +16,7 @@ contract NFTMarket is ReentrancyGuard {
   uint8 royalty_a = 50; // percent of royalty going to first owner
   uint8 royalty_b = 20; // percent of royalty going to the seller
   // //implicit royalty_c = 30; // percent of royalty going to the the intermediaries
-
+̀
   address payable owner;
   uint256 listingPrice = 0.025 ether;
 
