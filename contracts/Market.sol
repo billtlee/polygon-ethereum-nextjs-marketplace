@@ -66,9 +66,45 @@ contract NFTMarket is ReentrancyGuard {
     uint256 saleCount;
    
   }
-  
+
+  // struct Auction {
+  //   //uint itemId;
+  //   uint  endAt;
+  //   bool started;
+  //   bool ended;
+
+  //   address highestBidder;
+  //   uint highestBid;
+  //   uint bidCount;
+  // }
+
+  // struct BidStruct {
+  //     address payable bidder;
+  //     uint256 bid;
+  // }
+  //item 5 bid number 4
+  //bids[5][4] -> Bidstruct(address, bid amount)
+
+  // mapping (uint256 => Auction) private idToAuctionItem;
+  // mapping (uint256 => mapping(uint=>BidStruct)) public bids; 
   mapping(uint256 => MarketItem) private idToMarketItem;
   mapping (uint256 => mapping(uint256=>address payable)) owners;
+
+  /*bids[1]
+    address   bid
+    abc1      10
+    nsn12     20
+    ndasn     30
+    newbidder 40
+  
+  accounts
+    int     address
+    1         abc1
+    2         nsn12
+    3         ndasn
+    4         newbidder
+  */
+  
 
   event MarketItemCreated (
     uint indexed itemId,
@@ -90,6 +126,11 @@ contract NFTMarket is ReentrancyGuard {
     return listingPrice;
   }
   
+  // in create marketItem, add a boolean whether its onSale or onAuction (might be better to change sold to onSale)
+  // if on auction, take input of time period as well, and implement start procedure in this function (maybe think of setting where start of auction can also be set to a later time by the item owner)
+  // create item auction struct and create instance and store in a mapping for each item on auction
+  // this will store item id (this can be used to trace back Market Item Attributes), highest bid, highest bidder, mapping of bids, ending time, started, ended 
+
   /* Places an item for sale on the marketplace */
   function createMarketItem(
     address nftContract,
@@ -143,6 +184,7 @@ contract NFTMarket is ReentrancyGuard {
     address nftContract,
     uint256 itemId
     ) public payable nonReentrant {
+      //maybe add require idToMarketItem[itemId].sold == false;
     idToMarketItem[itemId].saleCount=idToMarketItem[itemId].saleCount+1; //numberOftimes item is sold
 
     uint price = idToMarketItem[itemId].price;
@@ -209,6 +251,13 @@ contract NFTMarket is ReentrancyGuard {
    
     IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
   }
+
+  /*
+    End auction function maybe can integrate the withdraw feature in this so users do not have to manually withdraw
+
+
+  */
+
 
   /* Returns all unsold market items */
   function fetchMarketItems() public view returns (MarketItem[] memory) {
