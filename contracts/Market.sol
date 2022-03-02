@@ -13,8 +13,8 @@ contract NFTMarket is ReentrancyGuard {
   Counters.Counter private _itemIds;
   Counters.Counter private _itemsSold;
   uint256 royalties = 10; // percent of sale going to royalties
-  uint256 royalty_a = 50; // percent of royalty going to first owner
-  uint256 royalty_b = 20; // percent of royalty going to the seller/*implicit royalty_c = 30;percent of royalty going to the the intermediaries*/
+  uint256 royalty_firstOwner = 50; // percent of royalty going to first owner
+  uint256 royalty_lastOwner = 20; // percent of royalty going to the seller /*implicit royalty_intermediaries = 30;percent of royalty going to the the intermediaries*/
   address payable owner;
   uint256 listingPrice = 0.025 ether;
 
@@ -23,26 +23,26 @@ contract NFTMarket is ReentrancyGuard {
     _;
   }
   
-  function setRoyalties(uint8 _royalties, uint8 _royalty_a, uint8 _royalty_b) external onlyOwner{
+  function setRoyalties(uint8 _royalties, uint8 _royalty_firstOwner, uint8 _royalty_lastOwner) external onlyOwner{
     if(_royalties<=100){
       royalties=_royalties;
     }
-    if(_royalty_a<=100 && _royalty_b<=100){
-      require((_royalty_a+_royalty_b)<=100);
-      royalty_a=_royalty_a;
-      royalty_b=_royalty_b;
+    if(_royalty_firstOwner<=100 && _royalty_lastOwner<=100){
+      require((_royalty_firstOwner+_royalty_lastOwner)<=100);
+      royalty_firstOwner=_royalty_firstOwner;
+      royalty_lastOwner=_royalty_lastOwner;
     }
-    else if (_royalty_a<=100){
-      require((_royalty_a+royalty_b)<=100);
-      royalty_a=_royalty_a;
+    else if (_royalty_firstOwner<=100){
+      require((_royalty_firstOwner+royalty_lastOwner)<=100);
+      royalty_firstOwner=_royalty_firstOwner;
     }
-    else if (_royalty_b<=100){
-      require((royalty_a+_royalty_b)<=100);
-      royalty_b=_royalty_b;
+    else if (_royalty_lastOwner<=100){
+      require((royalty_firstOwner+_royalty_lastOwner)<=100);
+      royalty_lastOwner=_royalty_lastOwner;
     }
   }
-  // this function can be called to change royalties and/or royalty_a and/or royalty_b
-  // royalty_c is still implicit since it always has to be equal to 100 - royalty_a - royalty_b and this method also avoids having to check if a + b + c = 100
+  // this function can be called to change royalties and/or royalty_firstOwner and/or royalty_lastOwner
+  // royalty_c is still implicit since it always has to be equal to 100 - royalty_firstOwner - royalty_lastOwner and this method also avoids having to check if a + b + c = 100
   // if you want to change only royalties to 20 percent call function with setRoyalties(20,101,101) and it will change only that
 
   constructor() {
@@ -136,16 +136,17 @@ contract NFTMarket is ReentrancyGuard {
     address nftContract,
     uint256 tokenId,
     uint256 price,
-    bool isAuctionItem
+    bool isAuctionItem,
+    uint256 numDays
 
   ) public payable nonReentrant {
     require(price > 0, "Price must be at least 1 wei");
-    require(msg.value == listingPrice, "Price must be equal to listing price");
-
+    //require(msg.value == listingPrice, "Price must be equal to listing price");
+    console.log("the base price is ", price);
 
     _itemIds.increment();
     uint256 itemId = _itemIds.current();
-
+    console.log("the itemid is  ", itemId);
   
     idToMarketItem[itemId] =  MarketItem(
       itemId,
@@ -181,7 +182,7 @@ contract NFTMarket is ReentrancyGuard {
 
     if(isAuctionItem){
       idToAuctionItem[itemId] = Auction( 
-        block.timestamp+300,
+        block.timestamp+numDays,
         true,
         false,
         payable(address(0)),
@@ -191,16 +192,19 @@ contract NFTMarket is ReentrancyGuard {
     }
   }
 
-  function CreateBid(uint256 itemId) public payable nonReentrant{
+  function CreateBid(uint256 itemId) public payable nonReentrant{ // bid sends money in msg.value
+    console.log("console log");
+    console.log("the bidder is ",msg.sender);
+    console.log(" the bid is ",msg.value);
+    console.log( " the min bid required is ", idToAuctionItem[itemId].highestBid);
     require(idToAuctionItem[itemId].started, "not started");
     require(block.timestamp < idToAuctionItem[itemId].endAt, "ended");
-    require(msg.value>idToAuctionItem[itemId].highestBid, "cheap bid");
-    
+    require(msg.value>idToAuctionItem[itemId].highestBid, "bid too low");
+
     idToAuctionItem[itemId].bidCount+=1;
     if (idToAuctionItem[itemId].highestBidder != address(0)) {
       //bids[idToAuctionItem[itemId].highestBidder] += idToAuctionItem[itemId].highestBid;
       bids[itemId][idToAuctionItem[itemId].bidCount] = BidStruct(idToAuctionItem[itemId].highestBidder,idToAuctionItem[itemId].highestBid );//mapping (uint256 => mapping(uint=>BidStruct)) public bids; 
-
     }
     idToAuctionItem[itemId].highestBidder = payable(msg.sender);
     idToAuctionItem[itemId].highestBid = msg.value;
@@ -214,11 +218,12 @@ contract NFTMarket is ReentrancyGuard {
         require(!idToAuctionItem[itemId].ended, "ended");
 
         idToAuctionItem[itemId].ended = true;
-        if (idToAuctionItem[itemId].highestBidder != address(0)) {
-            IERC721(idToMarketItem[itemId].nftContract).transferFrom(address(this), idToAuctionItem[itemId].highestBidder, idToMarketItem[itemId].tokenId);//nft.safeTransferFrom(address(this), highestBidder, nftId);
-            idToMarketItem[itemId].seller.transfer(idToAuctionItem[itemId].highestBid);
+        if (idToAuctionItem[itemId].highestBidder == address(0)) {  //in case there are no bids for the item
+            //IERC721(idToMarketItem[itemId].nftContract).transferFrom(address(this), idToAuctionItem[itemId].highestBidder, idToMarketItem[itemId].tokenId);//nft.safeTransferFrom(address(this), highestBidder, nftId);
+            //idToMarketItem[itemId].seller.transfer(idToAuctionItem[itemId].highestBid);
+            IERC721(idToMarketItem[itemId].nftContract).transferFrom(address(this), idToMarketItem[itemId].seller, idToMarketItem[itemId].tokenId);
         } else {
-            createMarketSale(idToMarketItem[itemId].nftContract, itemId);
+            createMarketSale(idToMarketItem[itemId].nftContract, itemId, true);
         }
         //withdraw function
         uint i = 1;
@@ -235,65 +240,82 @@ contract NFTMarket is ReentrancyGuard {
 
           emit Withdraw(itemId, bids[itemId][i].bidder, bal);
         }
-
-        idToAuctionItem[itemId].bidCount = 0;
-
+        idToAuctionItem[itemId] = Auction(block.timestamp,false,true,payable(address(0)),idToMarketItem[itemId].price,0);
         emit End(itemId, idToAuctionItem[itemId].highestBidder, idToAuctionItem[itemId].highestBid);
     }
 
+  // function startAuction(uint256 itemId, uint numDays, uint _price) public {
+  //   idToMarketItem[itemId].price = _price;
+  //   idToAuctionItem[itemId] = Auction(block.timestamp+numDays,true,false,payable(address(0)),idToMarketItem[itemId].price,0);
+  // }
   /* Creates the sale of a marketplace item */
   /* Transfers ownership of the item, as well as funds between parties */
   function createMarketSale(
     address nftContract,
-    uint256 itemId
+    uint256 itemId,
+    bool isAuctionSale
     ) public payable nonReentrant {
       //maybe add require idToMarketItem[itemId].sold == false;
     idToMarketItem[itemId].saleCount=idToMarketItem[itemId].saleCount+1; //numberOftimes item is sold
-
-    uint price = idToMarketItem[itemId].price;
+    uint price;
     uint tokenId = idToMarketItem[itemId].tokenId;
 
-    require(msg.value == price, "Please submit the asking price in order to complete the purchase");
+    if(isAuctionSale){
+      price = idToAuctionItem[itemId].highestBid;
+    }
+    else{
+      price = idToMarketItem[itemId].price;
+      require(msg.value == price, "Please submit the asking price in order to complete the purchase");
+    }
 
     if(idToMarketItem[itemId].saleCount==1)
     {
-    idToMarketItem[itemId].seller.transfer(msg.value);
+    idToMarketItem[itemId].seller.transfer(price);
     }
     if(idToMarketItem[itemId].saleCount==2)
     {
-    owners[itemId][0].transfer((msg.value*royalties/100*royalty_a/100));//First owner commission= msg.value*a*r
-    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*royalties/100*(100-royalty_a)/100);//last seller royalty= msg.value*r*c
-    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*(100-royalties)/100);//last seller sale = 90% of sale price
+    owners[itemId][0].transfer((price*royalties/100*royalty_firstOwner/100));//First owner commission= msg.value*a*r
+    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(price*royalties/100*(100-royalty_firstOwner)/100);//last seller royalty= msg.value*r*c
+    owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(price*(100-royalties)/100);//last seller sale = 90% of sale price
     }
     if(idToMarketItem[itemId].saleCount>2){
       //r =0.10, a=0.50, b=0.30, c=0.20
-      owners[itemId][0].transfer((msg.value*royalties/100*royalty_a/100));//First owner commission= msg.value*a*r
+      owners[itemId][0].transfer((price*royalties/100*royalty_firstOwner/100));//First owner commission= msg.value*a*r
       for (uint i=1;i< idToMarketItem[itemId].saleCount-1; i++){ //for all indermediaries, commission =  (msg.value*r*b/i)
-        owners[itemId][i].transfer((msg.value*royalties/100*royalty_b/100)/(idToMarketItem[itemId].saleCount-2));
+        owners[itemId][i].transfer((price*royalties/100*(100-royalty_firstOwner-royalty_lastOwner)/100)/(idToMarketItem[itemId].saleCount-2));
       }
-      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*royalties/100*(100-royalty_a-royalty_b)/100);//last seller royalty= msg.value*r*c (c=100-a-b)
-      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(msg.value*(100-royalties)/100); // last seller sale = 90% of sale price
+      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(price*royalties/100*royalty_lastOwner/100);//last seller royalty= msg.value*r*c (c=100-a-b)
+      owners[itemId][idToMarketItem[itemId].saleCount-1].transfer(price*(100-royalties)/100); // last seller sale = 90% of sale price
       
-      console.log("The first dude gets",msg.value*royalties/100*royalty_a/100);
-      console.log("The last dude gets", (msg.value*royalties/100*(100-royalty_a-royalty_b)/100+msg.value*(100-royalties)/100));
-      console.log("The middle men share is",(msg.value*royalties/100*royalty_b/100)/(idToMarketItem[itemId].saleCount-2));
-      console.log("THE total amount the middle men get is",msg.value*royalties/100*royalty_b/100);
+      console.log("The first dude gets",price*royalties/100*royalty_firstOwner/100);
+      console.log("The last dude gets", (price*royalties/100*royalty_lastOwner/100)/(idToMarketItem[itemId].saleCount-2));
+      console.log("The middle men share is",(price*royalties/100*(100-royalty_firstOwner-royalty_lastOwner)/100+price*(100-royalties)/100));
+      console.log("THE total amount the middle men get is",price*royalties/100*royalty_lastOwner/100);
     }
 
-   
-    IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);  //Ownership transfer
-    owners[itemId][idToMarketItem[itemId].saleCount]=payable(msg.sender); // the new owner is msg.sender
-    idToMarketItem[itemId].owner = payable(msg.sender);
+    if(!isAuctionSale){
+      IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);  //Ownership transfer
+      owners[itemId][idToMarketItem[itemId].saleCount]=payable(msg.sender); // the new owner is msg.sender
+      idToMarketItem[itemId].owner = payable(msg.sender);
+    }
+    else{
+      IERC721(nftContract).transferFrom(address(this), idToAuctionItem[itemId].highestBidder, tokenId);
+      owners[itemId][idToMarketItem[itemId].saleCount]=payable(idToAuctionItem[itemId].highestBidder); // the new owner is msg.sender
+      idToMarketItem[itemId].owner = payable(idToAuctionItem[itemId].highestBidder);
+    }
+    
     idToMarketItem[itemId].sold = true;
     _itemsSold.increment();
-    payable(owner).transfer(listingPrice);
+    //payable(owner).transfer(listingPrice);
   }
   
   function resellItem(
     address nftContract,
     uint256 tokenId,
     uint256 itemId,
-    uint256 price
+    uint256 price,
+    bool isAuctionItem,
+    uint256 numDays
   ) public payable{
     if(idToMarketItem[itemId].saleCount==1){
       idToMarketItem[itemId].secondOwner= payable(msg.sender);
@@ -313,6 +335,17 @@ contract NFTMarket is ReentrancyGuard {
     console.log("Token id", tokenId);
    
     IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+
+     if(isAuctionItem){
+      idToAuctionItem[itemId] = Auction( 
+        block.timestamp+numDays,
+        true,
+        false,
+        payable(address(0)),
+        price,
+        0
+      );
+     }
   }
 
   /*
